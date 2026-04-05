@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Henry's Cheese Chomper! 3D</title>
+
+<!-- THREE.JS: This is the 3D graphics library.
+     Think of it as a toolbox for building 3D worlds in a browser.
+     We load it from a CDN (a server that hosts popular code libraries). -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<style>
+  * {
+    margin: 0; padding: 0; box-sizing: border-box;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html, body {
+    touch-action: none;
+    overflow: hidden;
+    overflow-x: hidden;
+    height: 100vh; height: 100dvh;
+    width: 100%;
+    max-width: 100vw;
+  }
+  body {
+    background: #111;
+    font-family: 'Courier New', monospace;
+    color: #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .title {
+    font-size: 1.1rem;
+    color: #ffd700;
+    text-shadow: 0 0 12px rgba(255,215,0,0.4);
+    letter-spacing: 2px;
+    padding: 4px 0 2px 0;
+    text-align: center;
+  }
+
+  .hud {
+    display: flex; gap: 5px;
+    padding: 2px 0 2px 0;
+    font-size: 0.7rem; font-weight: bold;
+    justify-content: center; flex-wrap: wrap;
+  }
+  .hud span {
+    padding: 2px 6px; border-radius: 4px;
+    background: rgba(255,255,255,0.1);
+  }
+  .timer-danger {
+    color: #ff4444 !important;
+    animation: pulse 0.5s infinite alternate;
+  }
+  @keyframes pulse { from{opacity:1} to{opacity:0.5} }
+
+  /* 3D canvas fills the middle area */
+  .scene-wrap {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    /* Prevent the 3D canvas from ever pushing wider than the screen */
+    max-width: 100vw;
+  }
+  .scene-wrap canvas {
+    display: block;
+    border-radius: 6px;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  /* Overlays sit on TOP of the 3D scene */
+  .overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.85);
+    z-index: 10; text-align: center;
+    padding: 12px; border-radius: 6px;
+  }
+  .overlay h2 { font-size: 1.4rem; color: #ffd700; margin-bottom: 8px; }
+  .overlay p { font-size: 0.85rem; margin-bottom: 4px; color: #ccc; line-height: 1.3; }
+  .final-score { font-size: 1.3rem !important; color: #ffd700 !important; margin: 6px 0 !important; }
+  .new-record { color: #00ff88 !important; animation: pulse 0.4s infinite alternate; }
+  .btn {
+    margin-top: 12px; padding: 14px 32px; font-size: 1rem;
+    font-family: 'Courier New', monospace; font-weight: bold;
+    background: #ffd700; color: #1a1a2e; border: none;
+    border-radius: 8px; cursor: pointer; min-height: 44px;
+  }
+
+  /* Round flash */
+  .round-flash {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 1.5rem; color: #ffd700; font-weight: bold;
+    pointer-events: none; z-index: 5;
+    animation: flashIn 1s forwards;
+  }
+  @keyframes flashIn {
+    0%{opacity:1;transform:translate(-50%,-50%) scale(1.2)}
+    100%{opacity:0;transform:translate(-50%,-50%) scale(2)}
+  }
+
+  /* D-PAD */
+  .dpad-area {
+    padding: 4px 0 8px 0;
+    display: flex; justify-content: center;
+    width: 100%; flex-shrink: 0;
+  }
+  .dpad {
+    display: grid;
+    grid-template-columns: repeat(3, 60px);
+    grid-template-rows: repeat(3, 50px);
+    gap: 3px;
+  }
+  .dpad-btn {
+    background: rgba(255,215,0,0.18);
+    border: 2px solid rgba(255,215,0,0.45);
+    border-radius: 12px; color: #ffd700;
+    font-size: 1.3rem; display: flex;
+    align-items: center; justify-content: center;
+    cursor: pointer; touch-action: none;
+  }
+  .dpad-btn.active {
+    background: rgba(255,215,0,0.5);
+    border-color: #ffd700;
+  }
+  .dpad-empty { visibility: hidden; }
+  .footer { font-size: 0.6rem; color: #444; text-align: center; padding-bottom: 4px; }
+
+  @media (min-width: 768px) {
+    .title { font-size: 1.6rem; padding: 8px 0 4px 0; }
+    .hud { font-size: 0.9rem; gap: 10px; }
+    .dpad-area { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="title">HENRY'S CHEESE CHOMPER 3D</div>
+
+<div class="hud">
+  <span>Score: <span id="score">0</span></span>
+  <span id="timerBox">Time: <span id="timer">60</span>s</span>
+  <span>Best: <span id="highscore">0</span></span>
+  <span>Rd: <span id="round">1</span></span>
+</div>
+
+<div class="scene-wrap" id="sceneWrap">
+  <!-- Three.js will inject its canvas here -->
+
+  <div class="overlay" id="startScreen">
+    <h2>HENRY'S CHEESE CHOMPER</h2>
+    <p>Now in 3D!</p>
+    <p>Move Henry to eat all 10 cheeses</p>
+    <p>Each round he gets 10% slower</p>
+    <p>60 seconds. Beat your best!</p>
+    <button class="btn" id="startBtn">START GAME</button>
+  </div>
+
+  <div class="overlay" id="endScreen" style="display:none;">
+    <h2>TIME'S UP!</h2>
+    <p class="final-score">Henry ate <span id="finalScore">0</span> cheeses!</p>
+    <p>Round <span id="finalRound">1</span></p>
+    <p id="recordMsg" style="display:none;" class="new-record">NEW HIGH SCORE!</p>
+    <button class="btn" id="restartBtn">PLAY AGAIN</button>
+  </div>
+</div>
+
+<div class="dpad-area" id="dpadArea">
+  <div class="dpad">
+    <div class="dpad-empty"></div>
+    <div class="dpad-btn" data-dir="up">&#9650;</div>
+    <div class="dpad-empty"></div>
+    <div class="dpad-btn" data-dir="left">&#9664;</div>
+    <div class="dpad-empty"></div>
+    <div class="dpad-btn" data-dir="right">&#9654;</div>
+    <div class="dpad-empty"></div>
+    <div class="dpad-btn" data-dir="down">&#9660;</div>
+    <div class="dpad-empty"></div>
+  </div>
+</div>
+
+<div class="footer">Eat all the cheese!</div>
+
+<script>
+  /* =============================================
+     THREE.JS 3D GAME — HOW IT WORKS
+
+     In 2D, we had a flat canvas and drew shapes.
+     In 3D, we build a SCENE (a virtual room) with:
+
+     1. A CAMERA — your eyes looking into the scene
+     2. LIGHTS — so you can see things (like real life!)
+     3. MESHES — 3D objects made of a SHAPE + a MATERIAL
+        - Shape = "geometry" (sphere, cylinder, box, etc.)
+        - Material = the "paint" (color, shininess, etc.)
+     4. A RENDERER — turns the 3D scene into pixels on screen
+
+     Every frame (~60 times/sec), the renderer takes a
+     "photo" of the scene from the camera's perspective
+     and draws it to the screen.
+     ============================================= */
+
+  // ---- DOM ELEMENTS ----
+  const sceneWrap   = document.getElementById('sceneWrap');
+  const scoreDisplay = document.getElementById('score');
+  const timerDisplay = document.getElementById('timer');
+  const highDisplay  = document.getElementById('highscore');
+  const roundDisplay = document.getElementById('round');
+  const timerBox     = document.getElementById('timerBox');
+  const startScreen  = document.getElementById('startScreen');
+  const endScreen    = document.getElementById('endScreen');
+  const finalScoreEl = document.getElementById('finalScore');
+  const finalRoundEl = document.getElementById('finalRound');
+  const recordMsg    = document.getElementById('recordMsg');
+  const startBtn     = document.getElementById('startBtn');
+  const restartBtn   = document.getElementById('restartBtn');
+
+  // ---- GAME STATE ----
+  let score = 0, highScore = 0, round = 1, timeLeft = 60;
+  let gameRunning = false, timerInterval = null;
+  let playerSpeed = 0.08, baseSpeed = 0.08;
+  let directions = { up: false, down: false, left: false, right: false };
+
+  // The play area boundaries (3D units)
+  const FIELD_W = 14;  // width (x-axis)
+  const FIELD_D = 10;  // depth (z-axis)
+
+  // ---- LAYOUT: size the 3D viewport ----
+  function getSceneSize() {
+    // Use the CONTAINER's actual width, not the window width.
+    // This is more reliable because the container already has
+    // width:100% and respects padding/margins from the page.
+    const containerW = sceneWrap.clientWidth || document.documentElement.clientWidth;
+    const W = Math.min(window.innerWidth, containerW);
+    const H = window.innerHeight;
+    const titleH = document.querySelector('.title').offsetHeight;
+    const hudH = document.querySelector('.hud').offsetHeight;
+    const isMobile = W < 768;
+    const dpadH = isMobile ? document.getElementById('dpadArea').offsetHeight : 0;
+    const footerH = document.querySelector('.footer').offsetHeight;
+    const gaps = 12;
+    const availH = H - titleH - hudH - dpadH - footerH - gaps;
+    const availW = W - 16;
+    return {
+      w: Math.max(250, Math.floor(availW)),
+      h: Math.max(180, Math.floor(availH))
+    };
+  }
+
+  // ---- THREE.JS SETUP ----
+  // 1. SCENE — the virtual room everything lives in
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a3e);
+
+  // Add fog for atmosphere (things fade into the background color at a distance)
+  scene.fog = new THREE.Fog(0x1a1a3e, 18, 30);
+
+  // 2. CAMERA — positioned above and behind, looking down at the field
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+  camera.position.set(0, 12, 10);
+  camera.lookAt(0, 0, 0);
+
+  // 3. RENDERER — turns the 3D scene into pixels
+  const size = getSceneSize();
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(size.w, size.h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // CRITICAL: Three.js sets inline style="width:Xpx" on the canvas.
+  // CSS class rules can't override inline styles.
+  // So we set max-width as an INLINE style too — this caps it.
+  renderer.domElement.style.maxWidth = '100%';
+  renderer.domElement.style.maxHeight = '100%';
+  sceneWrap.insertBefore(renderer.domElement, sceneWrap.firstChild);
+
+  function resizeScene() {
+    const s = getSceneSize();
+    renderer.setSize(s.w, s.h);
+    // Re-apply after every resize (setSize overwrites inline styles)
+    renderer.domElement.style.maxWidth = '100%';
+    renderer.domElement.style.maxHeight = '100%';
+    camera.aspect = s.w / s.h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resizeScene);
+
+  // 4. LIGHTS
+  // Ambient light — a soft glow everywhere so nothing is pitch black
+  const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+  scene.add(ambient);
+
+  // Directional light — like the sun, casts shadows
+  const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  sunLight.position.set(5, 10, 5);
+  sunLight.castShadow = true;
+  sunLight.shadow.mapSize.width = 1024;
+  sunLight.shadow.mapSize.height = 1024;
+  sunLight.shadow.camera.left = -12;
+  sunLight.shadow.camera.right = 12;
+  sunLight.shadow.camera.top = 10;
+  sunLight.shadow.camera.bottom = -10;
+  scene.add(sunLight);
+
+  // A soft point light with warm color for extra atmosphere
+  const warmLight = new THREE.PointLight(0xffaa44, 0.4, 25);
+  warmLight.position.set(-4, 6, -2);
+  scene.add(warmLight);
+
+  // ---- BUILD THE GROUND ----
+  // A flat green plane for the field, and darker edges
+
+  const groundGeo = new THREE.PlaneGeometry(FIELD_W + 1, FIELD_D + 1);
+  const groundMat = new THREE.MeshStandardMaterial({
+    color: 0x2d5a27,    // dark green, like grass
+    roughness: 0.9
+  });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;  // lay it flat
+  ground.position.y = 0;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  // Border lines around the field
+  const borderGeo = new THREE.EdgesGeometry(
+    new THREE.PlaneGeometry(FIELD_W, FIELD_D)
+  );
+  const borderMat = new THREE.LineBasicMaterial({ color: 0xffd700, linewidth: 1 });
+  const border = new THREE.LineSegments(borderGeo, borderMat);
+  border.rotation.x = -Math.PI / 2;
+  border.position.y = 0.01;
+  scene.add(border);
+
+  // Grid lines on the ground for visual depth
+  const gridHelper = new THREE.GridHelper(FIELD_W, 14, 0x335533, 0x223322);
+  gridHelper.position.y = 0.005;
+  scene.add(gridHelper);
+
+  // ---- BUILD HENRY (stick man) ----
+  // Henry is a GROUP — a container that holds multiple meshes.
+  // When we move the group, everything inside moves together.
+
+  const henry = new THREE.Group();
+
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+  const skinMat = new THREE.MeshStandardMaterial({ color: 0xffddbb, roughness: 0.6 });
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+
+  // Head — a sphere
+  const headGeo = new THREE.SphereGeometry(0.3, 16, 16);
+  const head = new THREE.Mesh(headGeo, skinMat);
+  head.position.y = 1.85;
+  head.castShadow = true;
+  henry.add(head);
+
+  // Hair — a messy mop of overlapping lumps on top of the head
+  // We use several slightly flattened spheres in a dark brown color,
+  // scattered across the top. Think of it like a bunch of clay blobs
+  // smooshed together to make a hairstyle.
+  const hairMat = new THREE.MeshStandardMaterial({ color: 0x3b2507, roughness: 0.9 });
+  const hairPositions = [
+    { x: 0,    y: 2.1,  z: 0,    sx: 0.28, sy: 0.12, sz: 0.28 },  // top center
+    { x: 0.12, y: 2.07, z: 0.1,  sx: 0.2,  sy: 0.11, sz: 0.2  },  // front right
+    { x:-0.12, y: 2.07, z: 0.1,  sx: 0.2,  sy: 0.11, sz: 0.2  },  // front left
+    { x: 0.15, y: 2.05, z:-0.08, sx: 0.18, sy: 0.1,  sz: 0.18 },  // back right
+    { x:-0.15, y: 2.05, z:-0.08, sx: 0.18, sy: 0.1,  sz: 0.18 },  // back left
+    { x: 0,    y: 2.03, z:-0.18, sx: 0.22, sy: 0.1,  sz: 0.16 },  // back center
+  ];
+  hairPositions.forEach(hp => {
+    const hGeo = new THREE.SphereGeometry(1, 14, 14);
+    const hMesh = new THREE.Mesh(hGeo, hairMat);
+    hMesh.position.set(hp.x, hp.y, hp.z);
+    hMesh.scale.set(hp.sx, hp.sy, hp.sz);  // flatten each blob
+    hMesh.castShadow = true;
+    henry.add(hMesh);
+  });
+
+  // Eyes — two tiny dark spheres on the head
+  const eyeGeo = new THREE.SphereGeometry(0.06, 12, 12);
+  const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+  leftEye.position.set(-0.1, 1.9, 0.25);
+  henry.add(leftEye);
+  const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+  rightEye.position.set(0.1, 1.9, 0.25);
+  henry.add(rightEye);
+
+  // Smile — a small torus (donut shape) cut in half
+  const smileGeo = new THREE.TorusGeometry(0.1, 0.02, 8, 16, Math.PI);
+  const smile = new THREE.Mesh(smileGeo, eyeMat);
+  smile.position.set(0, 1.78, 0.26);
+  smile.rotation.z = Math.PI;  // flip it so it curves up
+  henry.add(smile);
+
+  // Body — a cylinder (16 sides = looks smooth and round)
+  // IMPORTANT: We put the body, arms, shoulders, legs, and feet into
+  // a SUB-GROUP called "bodyGroup." This way, when Henry gets fatter
+  // from eating cheese, we scale ONLY bodyGroup — his head, hair,
+  // eyes, and smile stay normal size. Otherwise his whole head
+  // would grow too, which looks weird.
+  const bodyGroup = new THREE.Group();
+  henry.add(bodyGroup);
+
+  const bodyGeo = new THREE.CylinderGeometry(0.15, 0.12, 0.8, 16);
+  const body = new THREE.Mesh(bodyGeo, whiteMat);
+  body.position.y = 1.2;
+  body.castShadow = true;
+  bodyGroup.add(body);
+
+  // Arms — hanging down from the shoulders
+  const armGeo = new THREE.CylinderGeometry(0.05, 0.04, 0.5, 12);
+  armGeo.translate(0, -0.25, 0);  // pivot at shoulder
+
+  const leftArm = new THREE.Mesh(armGeo, skinMat);
+  leftArm.position.set(-0.32, 1.52, 0);
+  leftArm.rotation.z = 0.2;
+  leftArm.castShadow = true;
+  bodyGroup.add(leftArm);
+  const rightArm = new THREE.Mesh(armGeo.clone(), skinMat);
+  rightArm.position.set(0.32, 1.52, 0);
+  rightArm.rotation.z = -0.2;
+  rightArm.castShadow = true;
+  bodyGroup.add(rightArm);
+
+  // Shoulder joints
+  const shoulderGeo = new THREE.SphereGeometry(0.07, 12, 12);
+  const leftShoulder = new THREE.Mesh(shoulderGeo, whiteMat);
+  leftShoulder.position.set(-0.22, 1.52, 0);
+  bodyGroup.add(leftShoulder);
+  const rightShoulder = new THREE.Mesh(shoulderGeo, whiteMat);
+  rightShoulder.position.set(0.22, 1.52, 0);
+  bodyGroup.add(rightShoulder);
+
+  // Legs — two smooth cylinders (12 sides)
+  const legGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.6, 12);
+  const leftLeg = new THREE.Mesh(legGeo, new THREE.MeshStandardMaterial({ color: 0x3344aa }));
+  leftLeg.position.set(-0.12, 0.5, 0);
+  leftLeg.castShadow = true;
+  bodyGroup.add(leftLeg);
+  const rightLeg = new THREE.Mesh(legGeo, leftLeg.material);
+  rightLeg.position.set(0.12, 0.5, 0);
+  rightLeg.castShadow = true;
+  bodyGroup.add(rightLeg);
+
+  // Feet — rounded shoes (squished spheres, not sharp boxes)
+  const footGeo = new THREE.SphereGeometry(1, 12, 12);
+  const footMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+  const leftFoot = new THREE.Mesh(footGeo, footMat);
+  leftFoot.position.set(-0.12, 0.2, 0.04);
+  leftFoot.scale.set(0.07, 0.04, 0.11);
+  bodyGroup.add(leftFoot);
+  const rightFoot = new THREE.Mesh(footGeo, footMat);
+  rightFoot.position.set(0.12, 0.2, 0.04);
+  rightFoot.scale.set(0.07, 0.04, 0.11);
+  bodyGroup.add(rightFoot);
+
+  henry.position.set(0, 0, 0);
+  scene.add(henry);
+
+  // ---- BUILD CHEESE ----
+  // A PROPER cheese wedge! Here's how it works:
+  //
+  // THREE.Shape = draw a 2D outline (like pen on paper)
+  // THREE.ExtrudeGeometry = push that outline up into 3D
+  //   (like a cookie cutter pushing through dough)
+  //
+  // Our outline: a triangle with one curved edge (the rind).
+  //   Tip (where the knife cut toward the center of the wheel)
+  //   ──► wide end with a curved back (the rind/crust)
+
+  function createCheese() {
+    const group = new THREE.Group();
+
+    const cheeseMat = new THREE.MeshStandardMaterial({
+      color: 0xffd700,
+      roughness: 0.4,
+      metalness: 0.1
+    });
+
+    // Step 1: Draw the 2D side profile of a cheese wedge
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);              // tip of the wedge
+    shape.lineTo(0.45, 0.22);        // top edge going toward the rind
+    // quadraticCurveTo draws a CURVE (the round outer rind)
+    // It takes a "control point" that pulls the line into an arc
+    shape.quadraticCurveTo(0.55, 0, 0.45, -0.22);
+    shape.lineTo(0, 0);              // bottom edge back to tip
+
+    // Step 2: Push the 2D shape into 3D
+    const wedgeGeo = new THREE.ExtrudeGeometry(shape, {
+      depth: 0.25,           // how thick the wedge is
+      bevelEnabled: true,    // rounds off the sharp edges
+      bevelThickness: 0.015,
+      bevelSize: 0.015,
+      bevelSegments: 3
+    });
+
+    const wedge = new THREE.Mesh(wedgeGeo, cheeseMat);
+    // Center it and raise it above the ground
+    wedge.position.set(-0.15, 0.12, -0.125);
+    wedge.castShadow = true;
+    group.add(wedge);
+
+    // Rind — a slightly darker strip on the curved back edge
+    const rindMat = new THREE.MeshStandardMaterial({
+      color: 0xe6a800,
+      roughness: 0.7
+    });
+    const rindShape = new THREE.Shape();
+    rindShape.moveTo(0.45, 0.22);
+    rindShape.quadraticCurveTo(0.55, 0, 0.45, -0.22);
+    rindShape.lineTo(0.42, -0.20);
+    rindShape.quadraticCurveTo(0.50, 0, 0.42, 0.20);
+    rindShape.lineTo(0.45, 0.22);
+    const rindGeo = new THREE.ExtrudeGeometry(rindShape, {
+      depth: 0.25, bevelEnabled: false
+    });
+    const rind = new THREE.Mesh(rindGeo, rindMat);
+    rind.position.set(-0.15, 0.12, -0.125);
+    group.add(rind);
+
+    // Cheese holes — dark discs on the flat "cut" face
+    // The front flat face (the side you'd see when cheese is sliced)
+    // is the most visible, so that's where the holes go.
+    const holeMat = new THREE.MeshStandardMaterial({
+      color: 0x4a3500,
+      roughness: 1.0,
+    });
+
+    const holeData = [
+      { x: 0.08, y: 0.18, r: 0.04 },   // near the top
+      { x: 0.20, y: 0.22, r: 0.035 },   // middle-upper
+      { x: 0.12, y: 0.10, r: 0.03 },    // lower
+      { x: 0.28, y: 0.15, r: 0.025 },   // near the rind
+    ];
+
+    holeData.forEach(h => {
+      const hGeo = new THREE.CircleGeometry(h.r, 12);
+      const hMesh = new THREE.Mesh(hGeo, holeMat);
+      // Position on the front flat face (z = depth of extrude)
+      hMesh.position.set(h.x - 0.15, h.y + 0.12, 0.14);
+      hMesh.castShadow = false;
+      group.add(hMesh);
+    });
+
+    return group;
+  }
+
+  // ---- CHEESE MANAGEMENT ----
+  let cheeseMeshes = [];
+
+  function spawnCheeses() {
+    // Remove old cheeses from the scene
+    cheeseMeshes.forEach(c => scene.remove(c));
+    cheeseMeshes = [];
+
+    const halfW = FIELD_W / 2 - 0.8;
+    const halfD = FIELD_D / 2 - 0.8;
+
+    for (let i = 0; i < 10; i++) {
+      const cheese = createCheese();
+      cheese.position.x = (Math.random() - 0.5) * 2 * halfW;
+      cheese.position.z = (Math.random() - 0.5) * 2 * halfD;
+      cheese.rotation.y = Math.random() * Math.PI * 2;  // random rotation for variety
+      scene.add(cheese);
+      cheeseMeshes.push(cheese);
+    }
+  }
+
+  // ---- COLLISION DETECTION (3D version) ----
+  // Even though it's 3D, Henry and the cheese both sit on the ground,
+  // so we only need to check distance on the X and Z axes (a flat circle).
+
+  function checkCollisions() {
+    for (let i = cheeseMeshes.length - 1; i >= 0; i--) {
+      const c = cheeseMeshes[i];
+      const dx = henry.position.x - c.position.x;
+      const dz = henry.position.z - c.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist < 0.7) {  // pickup radius
+        scene.remove(c);
+        cheeseMeshes.splice(i, 1);
+        score++;
+        scoreDisplay.textContent = score;
+        playChomp();
+
+        // Every 2 cheeses, Henry's BODY gets 5% wider (fatter!)
+        // Only bodyGroup grows — head/hair/face stay normal.
+        if (score % 2 === 0) {
+          bodyGroup.scale.x *= 1.05;
+          bodyGroup.scale.z *= 1.05;
+        }
+
+        if (cheeseMeshes.length === 0) {
+          round++;
+          roundDisplay.textContent = round;
+          // 10% slower each round
+          playerSpeed = Math.max(0.02, playerSpeed * 0.9);
+          showRoundFlash();
+          spawnCheeses();
+        }
+      }
+    }
+  }
+
+  function showRoundFlash() {
+    const flash = document.createElement('div');
+    flash.className = 'round-flash';
+    flash.textContent = 'Round ' + round + '!';
+    sceneWrap.appendChild(flash);
+    setTimeout(() => flash.remove(), 1000);
+  }
+
+  // ---- MOVEMENT ----
+  // Henry moves on the ground plane (X = left/right, Z = forward/back)
+
+  let bobTime = 0;  // for the walking bobble animation
+
+  function moveHenry() {
+    let moved = false;
+
+    // In 3D, "up" on screen = negative Z (away from camera)
+    if (directions.up)    { henry.position.z -= playerSpeed; moved = true; }
+    if (directions.down)  { henry.position.z += playerSpeed; moved = true; }
+    if (directions.left)  { henry.position.x -= playerSpeed; moved = true; }
+    if (directions.right) { henry.position.x += playerSpeed; moved = true; }
+
+    // Keep inside the field
+    const halfW = FIELD_W / 2 - 0.3;
+    const halfD = FIELD_D / 2 - 0.3;
+    henry.position.x = Math.max(-halfW, Math.min(halfW, henry.position.x));
+    henry.position.z = Math.max(-halfD, Math.min(halfD, henry.position.z));
+
+    // Face the direction Henry is moving
+    // Face the direction Henry is moving
+    // Henry's face (eyes/smile) points toward +Z by default.
+    // The camera looks from +Z toward origin.
+    // So rotation 0 = facing camera, PI = facing away.
+    if (directions.left && !directions.right)  henry.rotation.y = Math.PI / 2;
+    if (directions.right && !directions.left)  henry.rotation.y = -Math.PI / 2;
+    if (directions.up && !directions.down)     henry.rotation.y = Math.PI;  // face away (walking away from camera)
+    if (directions.down && !directions.up)     henry.rotation.y = 0;        // face toward camera (walking toward it)
+
+    // Walking bobble — Henry bounces slightly when moving
+    if (moved) {
+      bobTime += 0.15;
+      henry.position.y = Math.abs(Math.sin(bobTime)) * 0.12;
+      // Swing legs
+      leftLeg.rotation.x = Math.sin(bobTime) * 0.4;
+      rightLeg.rotation.x = Math.sin(bobTime + Math.PI) * 0.4;
+      leftArm.rotation.x = Math.sin(bobTime + Math.PI) * 0.3;
+      rightArm.rotation.x = Math.sin(bobTime) * 0.3;
+    } else {
+      // Standing still — reset to neutral
+      henry.position.y = 0;
+      leftLeg.rotation.x = 0;
+      rightLeg.rotation.x = 0;
+      leftArm.rotation.x = 0;
+      rightArm.rotation.x = 0;
+    }
+  }
+
+  // ---- CHEESE ANIMATION ----
+  // Each cheese slowly spins and bobs up and down (floating effect)
+  function animateCheeses(time) {
+    cheeseMeshes.forEach((c, i) => {
+      c.rotation.y += 0.015;  // slow spin
+      // Each cheese bobs at a slightly different phase
+      c.position.y = 0.25 + Math.sin(time * 0.002 + i * 1.5) * 0.1;
+    });
+  }
+
+  // ---- CHOMP SOUND ----
+  let audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function playChomp() {
+    if (!audioCtx) return;
+    try {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(520, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(320, audioCtx.currentTime + 0.05);
+      osc.frequency.setValueAtTime(150, audioCtx.currentTime + 0.10);
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+    } catch(e) {}
+  }
+
+  // ---- HIGH SCORE ----
+  // localStorage = the browser's built-in storage.
+  // It saves data as text on your device, even after you close the tab.
+  // (The Claude version used window.storage, which only works inside Claude.)
+  function loadHighScore() {
+    try {
+      const saved = localStorage.getItem('henrys-cheese-3d-highscore');
+      if (saved) { highScore = parseInt(saved)||0; highDisplay.textContent = highScore; }
+    } catch(e) { highScore = 0; }
+  }
+  function saveHighScore() {
+    try { localStorage.setItem('henrys-cheese-3d-highscore', String(highScore)); } catch(e) {}
+  }
+  loadHighScore();
+
+  // ---- KEYBOARD INPUT ----
+  const keyMap = { ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right' };
+  document.addEventListener('keydown', e => {
+    if (keyMap[e.key]) { directions[keyMap[e.key]] = true; e.preventDefault(); }
+  });
+  document.addEventListener('keyup', e => {
+    if (keyMap[e.key]) directions[keyMap[e.key]] = false;
+  });
+
+  // ---- D-PAD TOUCH INPUT ----
+  const activeTouches = {};
+  document.querySelectorAll('.dpad-btn').forEach(btn => {
+    const dir = btn.dataset.dir;
+    btn.addEventListener('touchstart', e => {
+      e.preventDefault(); e.stopPropagation(); ensureAudio();
+      for (const t of e.changedTouches) activeTouches[t.identifier] = dir;
+      directions[dir] = true; btn.classList.add('active');
+    }, { passive: false });
+    btn.addEventListener('touchend', e => {
+      e.preventDefault(); e.stopPropagation();
+      for (const t of e.changedTouches) delete activeTouches[t.identifier];
+      if (!Object.values(activeTouches).includes(dir)) {
+        directions[dir] = false; btn.classList.remove('active');
+      }
+    }, { passive: false });
+    btn.addEventListener('touchcancel', e => {
+      for (const t of e.changedTouches) delete activeTouches[t.identifier];
+      if (!Object.values(activeTouches).includes(dir)) {
+        directions[dir] = false; btn.classList.remove('active');
+      }
+    });
+    btn.addEventListener('mousedown', e => {
+      e.preventDefault(); directions[dir] = true; btn.classList.add('active');
+    });
+    btn.addEventListener('mouseup', () => { directions[dir] = false; btn.classList.remove('active'); });
+    btn.addEventListener('mouseleave', () => { directions[dir] = false; btn.classList.remove('active'); });
+  });
+  document.addEventListener('touchend', e => {
+    if (e.touches.length === 0) {
+      Object.keys(activeTouches).forEach(k => delete activeTouches[k]);
+      directions.up = directions.down = directions.left = directions.right = false;
+      document.querySelectorAll('.dpad-btn.active').forEach(b => b.classList.remove('active'));
+    }
+  }, { passive: true });
+  document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+  // ---- GAME LOOP ----
+  // This is the heartbeat — called ~60 times per second.
+  // It moves Henry, spins the cheeses, checks for pickups,
+  // and tells the renderer to draw a new frame.
+
+  function gameLoop(time) {
+    requestAnimationFrame(gameLoop);
+
+    if (gameRunning) {
+      moveHenry();
+      animateCheeses(time);
+      checkCollisions();
+    } else {
+      // Even when paused, animate cheeses so the menu looks alive
+      animateCheeses(time);
+    }
+
+    renderer.render(scene, camera);
+  }
+  requestAnimationFrame(gameLoop);
+
+  // ---- TIMER ----
+  function startTimer() {
+    timerInterval = setInterval(() => {
+      timeLeft--;
+      timerDisplay.textContent = timeLeft;
+      if (timeLeft <= 10) timerBox.classList.add('timer-danger');
+      if (timeLeft <= 0) endGame();
+    }, 1000);
+  }
+
+  // ---- START & END ----
+  function startGame() {
+    resizeScene();
+    score = 0; round = 1; timeLeft = 60;
+    playerSpeed = baseSpeed;
+    henry.position.set(0, 0, 0);
+    henry.rotation.y = 0;
+    bodyGroup.scale.set(1, 1, 1);  // reset fatness back to normal
+    directions = { up: false, down: false, left: false, right: false };
+    bobTime = 0;
+
+    scoreDisplay.textContent = 0;
+    timerDisplay.textContent = 60;
+    roundDisplay.textContent = 1;
+    timerBox.classList.remove('timer-danger');
+    startScreen.style.display = 'none';
+    endScreen.style.display = 'none';
+
+    spawnCheeses();
+    gameRunning = true;
+    startTimer();
+    ensureAudio();
+  }
+
+  function endGame() {
+    gameRunning = false;
+    clearInterval(timerInterval);
+    finalScoreEl.textContent = score;
+    finalRoundEl.textContent = round;
+    if (score > highScore) {
+      highScore = score;
+      highDisplay.textContent = highScore;
+      recordMsg.style.display = 'block';
+      saveHighScore();
+    } else {
+      recordMsg.style.display = 'none';
+    }
+    endScreen.style.display = 'flex';
+  }
+
+  // Spawn initial cheeses for the start menu background
+  spawnCheeses();
+
+  startBtn.addEventListener('click', startGame);
+  restartBtn.addEventListener('click', startGame);
+</script>
+</body>
+</html>
